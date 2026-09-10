@@ -1,0 +1,11 @@
+# Python desktop app
+venv/
+__pycache__/
+*.pyc
+
+# Node
+web/node_modules/
+web/dist/
+
+# OS / misc
+.DS_Store

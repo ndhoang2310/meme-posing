@@ -1,0 +1,284 @@
+{
+  "poses": {
+    "pose_1": {
+      "image_path": "assets/poses/pose 21.jpg",
+      "target_vector": [
+        146.876,
+        151.86,
+        107.261,
+        40.945
+      ],
+      "difficulty": "medium"
+    },
+    "pose_2": {
+      "image_path": "assets/poses/pose_1.jpeg",
+      "target_vector": [
+        50.654,
+        40.641,
+        136.265,
+        136.478
+      ],
+      "difficulty": "medium"
+    },
+    "pose_3": {
+      "image_path": "assets/poses/pose_10.jpg",
+      "target_vector": [
+        9.617,
+        175.856,
+        25.977,
+        23.192
+      ],
+      "difficulty": "hard"
+    },
+    "pose_4": {
+      "image_path": "assets/poses/pose_11.jpg",
+      "target_vector": [
+        26.543,
+        57.524,
+        37.815,
+        66.346
+      ],
+      "difficulty": "hard"
+    },
+    "pose_5": {
+      "image_path": "assets/poses/pose_12.jpg",
+      "target_vector": [
+        60.158,
+        170.348,
+        155.491,
+        22.954
+      ],
+      "difficulty": "medium"
+    },
+    "pose_6": {
+      "image_path": "assets/poses/pose_13.jpg",
+      "target_vector": [
+        161.029,
+        80.037,
+        16.006,
+        83.049
+      ],
+      "difficulty": "medium"
+    },
+    "pose_7": {
+      "image_path": "assets/poses/pose_14.jpg",
+      "target_vector": [
+        171.377,
+        170.711,
+        91.031,
+        88.538
+      ],
+      "difficulty": "easy"
+    },
+    "pose_8": {
+      "image_path": "assets/poses/pose_15.jpg",
+      "target_vector": [
+        155.261,
+        163.733,
+        129.857,
+        126.579
+      ],
+      "difficulty": "easy"
+    },
+    "pose_9": {
+      "image_path": "assets/poses/pose_16.jpg",
+      "target_vector": [
+        178.395,
+        58.168,
+        19.669,
+        128.444
+      ],
+      "difficulty": "medium"
+    },
+    "pose_10": {
+      "image_path": "assets/poses/pose_17.jpg",
+      "target_vector": [
+        12.636,
+        35.082,
+        7.859,
+        94.929
+      ],
+      "difficulty": "hard"
+    },
+    "pose_11": {
+      "image_path": "assets/poses/pose_18.jpg",
+      "target_vector": [
+        26.655,
+        29.143,
+        24.07,
+        27.433
+      ],
+      "difficulty": "hard"
+    },
+    "pose_12": {
+      "image_path": "assets/poses/pose_19.jpg",
+      "target_vector": [
+        67.635,
+        64.487,
+        86.55,
+        90.927
+      ],
+      "difficulty": "hard"
+    },
+    "pose_13": {
+      "image_path": "assets/poses/pose_2.jpg",
+      "target_vector": [
+        173.938,
+        116.21,
+        15.386,
+        168.106
+      ],
+      "difficulty": "easy"
+    },
+    "pose_14": {
+      "image_path": "assets/poses/pose_20.jpg",
+      "target_vector": [
+        108.116,
+        14.471,
+        45.322,
+        47.506
+      ],
+      "difficulty": "hard"
+    },
+    "pose_15": {
+      "image_path": "assets/poses/pose_22.png",
+      "target_vector": [
+        111.837,
+        49.743,
+        66.909,
+        61.361
+      ],
+      "difficulty": "hard"
+    },
+    "pose_16": {
+      "image_path": "assets/poses/pose_23.jpg",
+      "target_vector": [
+        63.668,
+        58.244,
+        55.912,
+        59.856
+      ],
+      "difficulty": "hard"
+    },
+    "pose_17": {
+      "image_path": "assets/poses/pose_24.jpg",
+      "target_vector": [
+        170.322,
+        53.333,
+        9.288,
+        28.459
+      ],
+      "difficulty": "hard"
+    },
+    "pose_19": {
+      "image_path": "assets/poses/pose_26.jpg",
+      "target_vector": [
+        45.095,
+        13.343,
+        14.738,
+        17.824
+      ],
+      "difficulty": "hard"
+    },
+    "pose_20": {
+      "image_path": "assets/poses/pose_27.jpg",
+      "target_vector": [
+        166.729,
+        153.465,
+        17.015,
+        68.47
+      ],
+      "difficulty": "medium"
+    },
+    "pose_21": {
+      "image_path": "assets/poses/pose_28.jpg",
+      "target_vector": [
+        99.726,
+        69.343,
+        29.071,
+        28.102
+      ],
+      "difficulty": "hard"
+    },
+    "pose_22": {
+      "image_path": "assets/poses/pose_29.jpg",
+      "target_vector": [
+        77.599,
+        73.388,
+        88.977,
+        90.241
+      ],
+      "difficulty": "medium"
+    },
+    "pose_23": {
+      "image_path": "assets/poses/pose_3.jpg",
+      "target_vector": [
+        176.263,
+        41.066,
+        13.931,
+        34.905
+      ],
+      "difficulty": "hard"
+    },
+    "pose_25": {
+      "image_path": "assets/poses/pose_4.jpg",
+      "target_vector": [
+        177.284,
+        57.174,
+        16.493,
+        82.018
+      ],
+      "difficulty": "medium"
+    },
+    "pose_26": {
+      "image_path": "assets/poses/pose_5.jpeg",
+      "target_vector": [
+        101.098,
+        95.27,
+        51.326,
+        55.06
+      ],
+      "difficulty": "hard"
+    },
+    "pose_27": {
+      "image_path": "assets/poses/pose_6.jpeg",
+      "target_vector": [
+        178.35,
+        47.011,
+        15.817,
+        84.052
+      ],
+      "difficulty": "hard"
+    },
+    "pose_28": {
+      "image_path": "assets/poses/pose_7.jpeg",
+      "target_vector": [
+        67.585,
+        171.686,
+        103.112,
+        21.083
+      ],
+      "difficulty": "medium"
+    },
+    "pose_29": {
+      "image_path": "assets/poses/pose_8.jpeg",
+      "target_vector": [
+        120.943,
+        169.269,
+        13.929,
+        17.875
+      ],
+      "difficulty": "medium"
+    },
+    "pose_30": {
+      "image_path": "assets/poses/pose_9.jpg",
+      "target_vector": [
+        177.366,
+        3.342,
+        14.858,
+        59.087
+      ],
+      "difficulty": "hard"
+    }
+  }
+}
