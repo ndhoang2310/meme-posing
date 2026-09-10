@@ -1,0 +1,5 @@
+# POSE MATCH 1V1 — Python desktop app
+mediapipe==0.10.14
+numpy==2.0.2
+opencv-python==5.0.0.93
+pygame==2.6.1
