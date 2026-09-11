@@ -1,22 +1,26 @@
-import { GAME_CONFIG } from "../app/game-config";
 import type { PlayerDetection } from "../app/types";
 
-// MediaPipe pose connections (upper body only — matches UPPER_BODY_ONLY).
+/** Player accents — match the CSS vars --cyan/--pink and Python P1/P2. */
+export const ACCENT_LEFT = "#00e5ff";
+export const ACCENT_RIGHT = "#ff2d78";
+const DOT_CENTER = "#070b16"; // dark joint core, like Python's hollow dots
+
+// Upper-body connections only — 1:1 with Python renderer's UPPER_BODY_ONLY set:
+// arms (11-13-15, 12-14-16), torso sides (11-23, 12-24), hips (23-24),
+// collar (11-12). No face/head dots.
 const CONNECTIONS: [number, number][] = [
-  [0, 1], [1, 2], [2, 3], [3, 7], [0, 4], [4, 5], [5, 6], [6, 8],
-  [9, 10],
-  [11, 12], [11, 13], [13, 15], [12, 14], [14, 16],
-  [11, 23], [12, 24], [23, 24],
+  [11, 13], [13, 15],
+  [12, 14], [14, 16],
+  [11, 23], [12, 24],
+  [23, 24],
+  [11, 12],
 ];
 
-export function skeletonColor(similarity: number): string {
-  if (similarity >= GAME_CONFIG.skeletonYellowBelow) return "#39ff6a"; // green
-  if (similarity >= GAME_CONFIG.skeletonWhiteBelow) return "#ffd23f"; // yellow
-  return "#ffffff";
-}
+const KEYPOINTS = [11, 12, 13, 14, 15, 16, 23, 24];
 
 /**
- * Draw the upper-body skeleton for one half-frame panel.
+ * Draw the upper-body skeleton for one half-frame panel, Python-style:
+ * fixed side accent, thick round limbs, hollow joint dots, rounded bbox.
  * Landmarks are crop-local normalized (0..1); panel maps to
  * (panelX, 0, panelW, canvasH).
  */
@@ -26,21 +30,24 @@ export function drawSkeleton(
   panelX: number,
   panelW: number,
   canvasH: number,
-  similarity: number,
-  holdProgress: number, // 0..1 ring around the head when on-threshold
+  accent: string,
+  alpha = 1,
 ): void {
-  if (!detection) return;
-  const color = skeletonColor(similarity);
+  if (!detection || alpha <= 0.02) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, alpha);
   const px = (nx: number) => panelX + nx * panelW;
   const py = (ny: number) => ny * canvasH;
 
   // Bounding box from crop-local normalized coords.
   const bb = detection.boundingBox;
   ctx.save();
-  ctx.strokeStyle = color;
+  ctx.strokeStyle = accent;
   ctx.globalAlpha = 0.9;
-  ctx.lineWidth = Math.max(2, panelW * 0.004);
-  ctx.strokeRect(px(bb.x), py(bb.y), bb.width * panelW, bb.height * canvasH);
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.roundRect(px(bb.x), py(bb.y), bb.width * panelW, bb.height * canvasH, 6);
+  ctx.stroke();
   ctx.restore();
 
   const pts = detection.landmarks;
@@ -49,13 +56,14 @@ export function drawSkeleton(
     return lm ? { x: px(lm.x), y: py(lm.y) } : null;
   };
 
+  const limbW = Math.max(2, panelW * 0.0045);
+  const dotR = Math.max(3, panelW * 0.0065);
+
   ctx.save();
-  ctx.strokeStyle = color;
-  ctx.fillStyle = color;
-  ctx.lineWidth = Math.max(3, panelW * 0.007);
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = limbW;
   ctx.lineCap = "round";
-  ctx.shadowColor = color;
-  ctx.shadowBlur = 12;
+  ctx.lineJoin = "round";
 
   ctx.beginPath();
   for (const [a, b] of CONNECTIONS) {
@@ -67,29 +75,25 @@ export function drawSkeleton(
   }
   ctx.stroke();
 
-  for (const i of [0, 11, 12, 13, 14, 15, 16, 23, 24]) {
+  // Hollow joint dots: accent ring + dark core.
+  ctx.fillStyle = accent;
+  for (const i of KEYPOINTS) {
     const p = at(i);
     if (!p) continue;
     ctx.beginPath();
-    ctx.arc(p.x, p.y, Math.max(3, panelW * 0.006), 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, dotR, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = DOT_CENTER;
+  for (const i of KEYPOINTS) {
+    const p = at(i);
+    if (!p) continue;
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, dotR * 0.45, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();
-
-  // Hold progress ring around the nose/head.
-  if (holdProgress > 0) {
-    const head = at(0);
-    if (head) {
-      const r = Math.max(18, panelW * 0.035);
-      ctx.save();
-      ctx.strokeStyle = "#39ff6a";
-      ctx.lineWidth = 5;
-      ctx.shadowColor = "#39ff6a";
-      ctx.shadowBlur = 14;
-      ctx.beginPath();
-      ctx.arc(head.x, head.y, r, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * holdProgress);
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
+  ctx.restore(); // outer alpha wrap
 }
+
+

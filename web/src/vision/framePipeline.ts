@@ -66,7 +66,9 @@ export async function pumpFrame(
   video: HTMLVideoElement,
   display: HTMLCanvasElement,
   workerClient: PoseWorkerClient,
-  maxInferenceWidth = 640,
+  // Half-frame width fed to the detector. 480px is plenty for upper-body
+  // poses and ~1.8x cheaper than 640 (cost scales with pixels).
+  maxInferenceWidth = 480,
 ): Promise<void> {
   const ctx = display.getContext("2d");
   if (!ctx) return;

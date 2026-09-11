@@ -29,7 +29,8 @@ export async function loadPoseCatalog(
   url = "/poses_cache.json",
   fetchFn: typeof fetch = fetch,
 ): Promise<PoseDefinition[]> {
-  const res = await fetchFn(url);
+  // no-store: boot must never run on a stale cached catalog.
+  const res = await fetchFn(url, { cache: "no-store" });
   if (!res.ok) throw new Error(`pose catalog fetch failed: ${res.status}`);
   const raw = (await res.json()) as RawCache | Record<string, RawPoseEntry>;
   const dict: Record<string, RawPoseEntry> =

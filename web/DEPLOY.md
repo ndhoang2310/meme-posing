@@ -74,9 +74,62 @@ Thoát kiosk: `Cmd+Q` (macOS) / `Alt+F4` (Windows).
 | “Không tìm thấy webcam” | Kiểm tra OS có nhận camera; đóng app khác đang giữ camera (Zoom/Teams) |
 | Màn hình đen sau khi Bắt đầu | Camera bị app khác chiếm, hoặc quyền camera OS bị tắt (macOS: System Settings → Privacy → Camera) |
 | Lag / % nhảy chậm | Đóng tab/app nặng khác; máy booth nên có GPU/CPU desktop thông thường là đủ |
+| Game kẹt ở màn hình loading / Network toàn `304` | Cache cũ từ lần chạy trước — hard refresh: `Cmd+Shift+R` (macOS) / `Ctrl+F5` (Windows), hoặc mở tab ẩn danh. Từ bản fix này server đã tắt cache (`no-store`) nên lỗi không tái diễn |
+| `Không khởi động được game` + `ModuleFactory not set.` | Bản build cũ (worker dạng module) — chạy lại `sh web/start-booth.sh` để tự rebuild (script đã tự detect source mới), rồi reload trang |
 | Muốn build lại sau khi `git pull` | `cd web && npm run build`, rồi chạy lại script |
 
-## 6. Fallback: bản Python desktop (không khuyến nghị cho booth mới)
+## 6. Deploy Cloudflare (web tĩnh cho máy client)
+
+Ổn. Bản web mặc định dùng model **lite (5.7MB)** nên **vừa luôn giới hạn
+25MB/file của Pages** — deploy thẳng, không cần R2. (Chỉ khi đổi lại model
+full ~30MB qua `VITE_MODEL_URL` thì mới cần §6.1.)
+
+### 6.1. R2 cho model full (chỉ khi dùng model full)
+
+1. Cloudflare dashboard → **R2** → tạo bucket, ví dụ `pose-match-assets`.
+2. Upload `web/public/models/pose_landmarker.task` (giữ nguyên tên file).
+3. Mở public access: bucket → **Settings → Public access** → bật qua `r2.dev`
+   subdomain hoặc custom domain, được URL dạng
+   `https://pub-xxx.r2.dev/pose_landmarker.task`.
+4. Thêm **CORS policy** cho bucket (cho phép Pages fetch model):
+   ```json
+   [
+     {
+       "AllowedOrigins": ["https://<ten-app>.pages.dev"],
+       "AllowedMethods": ["GET", "HEAD"],
+       "AllowedHeaders": ["*"],
+       "MaxAgeSeconds": 86400
+     }
+   ]
+   ```
+
+### 6.2. Pages cho app
+
+1. **Workers & Pages → Create → Pages → Connect to Git**, chọn repo.
+2. Cấu hình build:
+   | Mục | Giá trị |
+   |---|---|
+   | Root directory | `web` |
+   | Build command | `npm run build` |
+   | Build output directory | `dist` |
+   | Biến môi trường | `VITE_MODEL_URL=https://pub-xxx.r2.dev/pose_landmarker.task` |
+3. Deploy. File `public/_headers` trong repo tự set sẵn
+   `Cross-Origin-Opener-Policy` + `Cross-Origin-Embedder-Policy` cho mọi response
+   (MediaPipe WASM bắt buộc).
+
+> `VITE_MODEL_URL` được nhúng **lúc build** — đổi URL model thì phải
+> **Retry deployment** lại. Không set thì mặc định dùng model lite
+> `/models/pose_landmarker_lite.task` same-origin (offline OK).
+> Muốn model full local: build với `VITE_MODEL_URL=/models/pose_landmarker.task`.
+
+### 6.3. Yêu cầu máy client
+
+- HTTPS (Pages có sẵn) → camera `getUserMedia` chạy được.
+- Chrome/Edge bản mới + webcam + CPU desktop thông thường.
+- Lần tải đầu ~35MB (model R2 + WASM) — sau đó browser cache.
+- Muốn chạy **offline** thì vẫn dùng `sh web/start-booth.sh` trên máy booth.
+
+## 7. Fallback: bản Python desktop (không khuyến nghị cho booth mới)
 
 ```sh
 python3.9 -m venv venv

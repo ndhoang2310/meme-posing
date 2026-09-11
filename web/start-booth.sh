@@ -11,11 +11,12 @@ if [ ! -d node_modules ]; then
   npm install --no-audit --no-fund
 fi
 
-if [ ! -d dist ]; then
+# Rebuild when dist is missing or any source is newer than the last build,
+# so code/config changes always take effect on next launch.
+if [ ! -d dist ] || [ -n "$(find src public index.html vite.config.ts tsconfig.json package.json -newer dist -print -quit 2>/dev/null)" ]; then
   echo "[booth] building..."
   npm run build
 fi
 
-echo "[booth] serving at http://localhost:${PORT}  (Ctrl+C to stop)"
 echo "[booth] open with:  google-chrome --kiosk http://localhost:${PORT} --use-fake-ui-for-media-stream"
-npx --yes serve dist -l "${PORT}"
+PORT="${PORT}" node serve-booth.mjs

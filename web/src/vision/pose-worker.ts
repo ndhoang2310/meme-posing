@@ -4,12 +4,17 @@
  * time; drops new frames while busy so no queue lag builds up.
  *
  * Main thread protocol:
- *   { type: "init", wasmUrl, modelUrl } -> { type: "ready" } | { type: "error", message }
+ *   { type: "init", wasmUrl, modelUrl } -> { type: "ready", model } | { type: "error", message }
  *   { type: "frame", timestampMs, left: ImageBitmap, right: ImageBitmap }
  *     -> { type: "packet", packet: VisionPacket }
  */
 
 import { FilesetResolver, PoseLandmarker } from "@mediapipe/tasks-vision";
+import {
+  SPARSE_PHASE_LEFT,
+  SPARSE_PHASE_RIGHT,
+  shouldRunHalf,
+} from "./detectionScheduler";
 
 type Landmarker = PoseLandmarker;
 
@@ -30,6 +35,11 @@ let leftDetector: Landmarker | null = null;
 let rightDetector: Landmarker | null = null;
 let busy = false;
 let closed = false;
+// Asymmetric scheduling state (see detectionScheduler): idle halves are
+// checked sparsely so the tracked half gets (nearly) full inference rate.
+let frameSeq = 0;
+let nullRunL = 0;
+let nullRunR = 0;
 
 function makeDetector(
   modelPath: string,
@@ -41,7 +51,10 @@ function makeDetector(
     numPoses: 1,
     minPoseDetectionConfidence: 0.5,
     minPosePresenceConfidence: 0.5,
-    minTrackingConfidence: 0.4,
+    // Low-ish tracking threshold: keep the track alive through momentary
+    // dips (lighting/motion) instead of dropping to re-detect every second.
+    // Jitter from looser tracks is absorbed by the main-thread smoother.
+    minTrackingConfidence: 0.3,
   });
 }
 
@@ -76,8 +89,9 @@ async function handleInit(msg: InitMsg) {
     const vision = await FilesetResolver.forVisionTasks(msg.wasmUrl);
     leftDetector = await makeDetector(msg.modelUrl, vision);
     rightDetector = await makeDetector(msg.modelUrl, vision);
-    // Warm-up not possible without a frame; report ready.
-    self.postMessage({ type: "ready" });
+    // Warm-up not possible without a frame; report ready (+ model label for debug).
+    const model = msg.modelUrl.split("/").pop() ?? msg.modelUrl;
+    self.postMessage({ type: "ready", model });
   } catch (err) {
     self.postMessage({
       type: "error",
@@ -99,16 +113,22 @@ function handleFrame(msg: FrameMsg) {
   }
   busy = true;
   try {
+    frameSeq++;
     const ts = Math.max(1, Math.round(timestampMs));
-    const l = leftDetector.detectForVideo(left, ts);
-    const r = rightDetector.detectForVideo(right, ts);
+    // Idle halves run sparsely; skipped halves report null this packet.
+    const runL = shouldRunHalf(nullRunL, frameSeq, SPARSE_PHASE_LEFT);
+    const runR = shouldRunHalf(nullRunR, frameSeq, SPARSE_PHASE_RIGHT);
+    const lDet = runL
+      ? toDetection(leftDetector.detectForVideo(left, ts) as never, timestampMs)
+      : null;
+    const rDet = runR
+      ? toDetection(rightDetector.detectForVideo(right, ts) as never, timestampMs)
+      : null;
+    if (runL) nullRunL = lDet ? 0 : nullRunL + 1;
+    if (runR) nullRunR = rDet ? 0 : nullRunR + 1;
     self.postMessage({
       type: "packet",
-      packet: {
-        timestampMs,
-        left: toDetection(l as never, timestampMs),
-        right: toDetection(r as never, timestampMs),
-      },
+      packet: { timestampMs, left: lDet, right: rDet },
     });
   } catch (err) {
     self.postMessage({

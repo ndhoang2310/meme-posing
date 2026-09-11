@@ -10,6 +10,7 @@ interface WorkerPacketMsg {
 
 interface WorkerReadyMsg {
   type: "ready";
+  model?: string;
 }
 
 interface WorkerErrorMsg {
@@ -39,6 +40,9 @@ export class PoseWorkerClient {
 
   status: WorkerStatus = "idle";
 
+  /** Model filename reported by the worker at init (for debug display). */
+  modelLabel = "?";
+
   onPacket(handler: (p: VisionPacket) => void): void {
     this.packetHandler = handler;
   }
@@ -55,10 +59,16 @@ export class PoseWorkerClient {
   async init(opts?: { wasmUrl?: string; modelUrl?: string }): Promise<void> {
     this.terminate();
     this.setStatus("loading");
-    // WASM is bundled locally in /wasm so the booth works offline —
-    // no CDN dependency at event time.
-    const wasmUrl = opts?.wasmUrl ?? "/wasm";
-    const modelUrl = opts?.modelUrl ?? "/models/pose_landmarker.task";
+    // WASM + model are bundled locally so the booth works offline — no CDN
+    // dependency at event time. Default is the LITE model (5.7MB, ~3x faster
+    // inference than full; plenty accurate for 4 upper-body joint angles).
+    // Override via env (baked in at build time):
+    // - full local model:  VITE_MODEL_URL=/models/pose_landmarker.task
+    // - Cloudflare R2 full: VITE_MODEL_URL=https://pub-xxx.r2.dev/pose_landmarker.task
+    // (the 30MB full .task exceeds Pages' 25MB/file limit -> R2 only for full).
+    const wasmUrl = opts?.wasmUrl ?? import.meta.env.VITE_WASM_URL ?? "/wasm";
+    const modelUrl =
+      opts?.modelUrl ?? import.meta.env.VITE_MODEL_URL ?? "/models/pose_landmarker_lite.task";
     this.worker = new PoseWorker();
     await new Promise<void>((resolve, reject) => {
       const w = this.worker;
@@ -78,6 +88,7 @@ export class PoseWorkerClient {
       const onMsg = (ev: MessageEvent<WorkerMsg>) => {
         if (ev.data?.type === "ready") {
           cleanup();
+          this.modelLabel = (ev.data as WorkerReadyMsg).model ?? "?";
           this.setStatus("ready");
           w.addEventListener("message", this.handleMessage);
           w.addEventListener("error", this.handleError);

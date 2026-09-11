@@ -7,10 +7,11 @@ import { cameraErrorCode, startCamera, type CameraHandle, type CameraStatus } fr
 import { pumpFrame } from "../vision/framePipeline";
 import { PoseWorkerClient, type WorkerStatus } from "../vision/poseWorkerClient";
 import { fitArena } from "../render/layout";
-import { drawSkeleton } from "../render/skeletonCanvas";
+import { ACCENT_LEFT, ACCENT_RIGHT, drawSkeleton } from "../render/skeletonCanvas";
+import { DetectionSmoother } from "../vision/landmarkSmoother";
 import { clearEffects, drawEffects, triggerScoreBurst, triggerWinnerGlow } from "../render/effectsCanvas";
 import { CameraArena } from "../components/CameraArena";
-import { PlayerPanel } from "../components/PlayerPanel";
+import { PlayerStatOverlay } from "../components/PlayerStatOverlay";
 import { TargetPoseCard } from "../components/TargetPoseCard";
 import { GameHud } from "../components/GameHud";
 import { GameOverlay } from "../components/GameOverlay";
@@ -19,6 +20,17 @@ import "../styles/arena.css";
 import "../styles/overlays.css";
 
 type AppPhase = "boot" | "camera" | "running" | "fatal";
+
+/**
+ * Worker liveness window: time since the LAST ARRIVED packet before the
+ * worker counts as stalled (frozen / tab jank). Stalled packets are treated
+ * as "no players" so the game never scores on frozen landmarks.
+ *
+ * NOTE: this deliberately measures arrival time, NOT packet timestamp age.
+ * Timestamp age includes inference latency, so gating on it misfires on slow
+ * CPUs (a healthy-but-slow worker's packets would all look "stale").
+ */
+const WORKER_ALIVE_MS = 1500;
 
 const initialSnapshot: GameSnapshot = {
   state: "IDLE",
@@ -53,6 +65,26 @@ export function App() {
   const prevScorerRef = useRef<string | null>(null);
   const prevWinnerRef = useRef<string | null>(null);
   const runningRef = useRef(false);
+  // Per-side temporal smoothing (glide + debounce + presence fade).
+  const smootherL = useRef(new DetectionSmoother());
+  const smootherR = useRef(new DetectionSmoother());
+  // Last logic-visible pose per side: drawn dissolving while presence fades.
+  const lastPoseL = useRef<VisionPacket["left"]>(null);
+  const lastPoseR = useRef<VisionPacket["right"]>(null);
+  // Vision telemetry (?debug=1 overlay): arrival liveness + packet counters.
+  const packetAtRef = useRef(0);
+  const teleRef = useRef({ count: 0, windowStart: 0, fps: 0, rttMs: 0, nullL: 0, nullR: 0 });
+  const [debugSnap, setDebugSnap] = useState({ fps: 0, rttMs: 0, nullL: 0, nullR: 0, model: "?" });
+  // Dim-layer opacity per half (DOM overlay, GPU-faded). 1 = fully dimmed.
+  const [dimLevel, setDimLevel] = useState({ l: 1, r: 1 });
+  const debugSentRef = useRef(0);
+  // Snapshot throttle: pushing a full React re-render at 60fps janks weak
+  // CPUs (canvas + compositor stutter). Discrete changes go instantly;
+  // bars/timers ride a 100ms cadence (CSS transitions keep them smooth).
+  const uiRef = useRef({ key: "", t: 0 });
+  const [showDebug] = useState(
+    () => new URLSearchParams(window.location.search).get("debug") === "1",
+  );
 
   const getEngine = () => {
     if (!engineRef.current) engineRef.current = new GameEngine();
@@ -84,7 +116,16 @@ export function App() {
           }
         });
         client.onPacket((p) => {
+          const arrived = performance.now();
           packetRef.current = p;
+          packetAtRef.current = arrived;
+          // Telemetry: detection rate + worker round-trip latency.
+          const t = teleRef.current;
+          t.count += 1;
+          t.rttMs = arrived - p.timestampMs;
+          t.nullL = p.left == null ? t.nullL + 1 : 0;
+          t.nullR = p.right == null ? t.nullR + 1 : 0;
+          if (t.windowStart === 0) t.windowStart = arrived;
         });
         await client.init();
         if (cancelled) return;
@@ -152,29 +193,44 @@ export function App() {
       } catch {
         // Non-fatal: keep the loop alive on a bad frame.
       }
-      const snap = engine.update(packetRef.current, performance.now());
+      const now = performance.now();
+      // Worker liveness by ARRIVAL time (see WORKER_ALIVE_MS): a slow-but-alive
+      // worker's packets stay valid; only a truly stalled worker goes null.
+      const raw = packetRef.current;
+      const alive = raw !== null && now - packetAtRef.current <= WORKER_ALIVE_MS;
+      const fresh = alive ? raw : null;
+      const left = smootherL.current.update(fresh?.left ?? null, now);
+      const right = smootherR.current.update(fresh?.right ?? null, now);
+      const packet = fresh ? { timestampMs: fresh.timestampMs, left, right } : null;
+      // Telemetry: packets/s + per-side consecutive-null streaks.
+      const t = teleRef.current;
+      if (now - t.windowStart >= 1000 && t.windowStart !== 0) {
+        t.fps = (t.count * 1000) / (now - t.windowStart);
+        t.count = 0;
+        t.windowStart = now;
+      }
+      if (showDebug && now - debugSentRef.current >= 500) {
+        debugSentRef.current = now;
+        setDebugSnap({ fps: t.fps, rttMs: t.rttMs, nullL: t.nullL, nullR: t.nullR, model: worker.modelLabel });
+      }
+      const snap = engine.update(packet, now);
       const ctx = canvas.getContext("2d");
+      // NO PLAYER dim is the DEFAULT layer; presence crossfades skeleton in
+      // and dim out (and back). Continuous alphas => the layer can never blink.
+      const pl = smootherL.current.getPresence();
+      const pr = smootherR.current.getPresence();
+      if (left) lastPoseL.current = left;
+      if (right) lastPoseR.current = right;
       if (ctx) {
         const halfW = Math.floor(canvas.width / 2);
         ctx.clearRect(0, 0, 0, 0); // noop guard; video already painted by pumpFrame
-        drawSkeleton(
-          ctx,
-          packetRef.current?.left ?? null,
-          0,
-          halfW,
-          canvas.height,
-          snap.similarity.left,
-          snap.holdMs.left / GAME_CONFIG.holdDurationMs,
-        );
-        drawSkeleton(
-          ctx,
-          packetRef.current?.right ?? null,
-          halfW,
-          canvas.width - halfW,
-          canvas.height,
-          snap.similarity.right,
-          snap.holdMs.right / GAME_CONFIG.holdDurationMs,
-        );
+        const showL = left ?? lastPoseL.current;
+        const showR = right ?? lastPoseR.current;
+        // Canvas draws video + fading skeletons only; the dim is a DOM layer.
+        if (showL) drawSkeleton(ctx, showL, 0, halfW, canvas.height, ACCENT_LEFT, pl);
+        if (showR) {
+          drawSkeleton(ctx, showR, halfW, canvas.width - halfW, canvas.height, ACCENT_RIGHT, pr);
+        }
         drawEffects(ctx, canvas.width, canvas.height, ts, Math.min(dt, 100));
       }
       // Score / winner transitions -> effects (edge-triggered).
@@ -189,10 +245,25 @@ export function App() {
       } else if (snap.state !== "GAME_OVER") {
         prevWinnerRef.current = null;
       }
-      setSnapshot(snap);
-      const pkt = packetRef.current;
+      // Throttled UI push (see uiRef): full 60fps re-renders are skipped.
+      const uiKey =
+        `${snap.state}|${snap.score.left}|${snap.score.right}|${snap.roundNumber}|` +
+        `${snap.winner}|${snap.lastScorer}|${Math.ceil(snap.countdownRemainingMs / 250)}|` +
+        `${Math.ceil(snap.gameRemainingMs / 1000)}`;
+      const ui = uiRef.current;
+      if (uiKey !== ui.key || now - ui.t >= 100) {
+        ui.key = uiKey;
+        ui.t = now;
+        setSnapshot(snap);
+        // DOM dim layers ride the same ~10Hz push; CSS transition smooths it.
+        setDimLevel((prev) => {
+          const next = { l: 1 - pl, r: 1 - pr };
+          return prev.l === next.l && prev.r === next.r ? prev : next;
+        });
+      }
+      // Panels follow the slow presence level (free hysteresis for UI text).
       setPresence((prev) => {
-        const next = { left: pkt?.left != null, right: pkt?.right != null };
+        const next = { left: pl >= 0.5, right: pr >= 0.5 };
         return prev.left === next.left && prev.right === next.right ? prev : next;
       });
       raf = requestAnimationFrame(tick);
@@ -226,6 +297,11 @@ export function App() {
   const handleReset = useCallback(() => {
     getEngine().resetToIdle();
     packetRef.current = null;
+    smootherL.current.reset();
+    smootherR.current.reset();
+    lastPoseL.current = null;
+    lastPoseR.current = null;
+    setDimLevel({ l: 1, r: 1 });
     clearEffects();
     prevScorerRef.current = null;
     prevWinnerRef.current = null;
@@ -277,16 +353,36 @@ export function App() {
         totalRounds={snapshot.totalRounds}
       />
       <div className="main-row">
-        <PlayerPanel
-          side="left"
-          score={snapshot.score.left}
-          similarity={snapshot.similarity.left}
-          detected={presence.left}
-          holdProgress={Math.min(1, snapshot.holdMs.left / GAME_CONFIG.holdDurationMs)}
-          lastScorer={snapshot.lastScorer}
-        />
         <div ref={arenaWrapRef} className="arena-cell">
           {showArena && <CameraArena ref={canvasRef} />}
+          {showArena && (
+            <>
+              <div className="dim-layer dim-left" style={{ opacity: dimLevel.l }}>
+                <span className="dim-text">NO PLAYER</span>
+              </div>
+              <div className="dim-layer dim-right" style={{ opacity: dimLevel.r }}>
+                <span className="dim-text">NO PLAYER</span>
+              </div>
+            </>
+          )}
+          {showArena && (
+            <>
+              <PlayerStatOverlay
+                side="left"
+                score={snapshot.score.left}
+                similarity={snapshot.similarity.left}
+                detected={presence.left}
+                holdProgress={Math.min(1, snapshot.holdMs.left / GAME_CONFIG.holdDurationMs)}
+              />
+              <PlayerStatOverlay
+                side="right"
+                score={snapshot.score.right}
+                similarity={snapshot.similarity.right}
+                detected={presence.right}
+                holdProgress={Math.min(1, snapshot.holdMs.right / GAME_CONFIG.holdDurationMs)}
+              />
+            </>
+          )}
           {(snapshot.state === "PLAYING" || snapshot.state === "PAUSED") && (
             <div className="target-overlay">
               <TargetPoseCard
@@ -297,14 +393,6 @@ export function App() {
             </div>
           )}
         </div>
-        <PlayerPanel
-          side="right"
-          score={snapshot.score.right}
-          similarity={snapshot.similarity.right}
-          detected={presence.right}
-          holdProgress={Math.min(1, snapshot.holdMs.right / GAME_CONFIG.holdDurationMs)}
-          lastScorer={snapshot.lastScorer}
-        />
       </div>
       <footer className="footer">
         <span className="status-line">
@@ -329,6 +417,25 @@ export function App() {
           scoreRight={snapshot.score.right}
           onRetryCamera={handleStartCamera}
         />
+      )}
+      {showDebug && (
+        <div
+          style={{
+            position: "fixed",
+            left: 8,
+            bottom: 8,
+            zIndex: 99,
+            background: "rgba(0,0,0,0.75)",
+            color: "#7dffb0",
+            font: "12px monospace",
+            padding: "6px 10px",
+            borderRadius: 6,
+            pointerEvents: "none",
+          }}
+        >
+          det {debugSnap.fps.toFixed(1)}/s · rtt {Math.round(debugSnap.rttMs)}ms · nullL
+          x{debugSnap.nullL} · nullR x{debugSnap.nullR} · {debugSnap.model}
+        </div>
       )}
     </div>
   );

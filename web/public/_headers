@@ -1,0 +1,5 @@
+# Cloudflare Pages headers (copied to dist/ on build).
+# MediaPipe WASM workers require a cross-origin isolated context.
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp

@@ -68,11 +68,36 @@ html, body, #root {
 .main-row {
   flex: 1;
   display: grid;
-  grid-template-columns: 240px 1fr 240px;
+  grid-template-columns: 1fr;
   gap: 12px;
   padding: 6px 18px;
   min-height: 0;
 }
+
+/* Per-player stats floating inside the camera (top corners per half). */
+.stat-chip {
+  position: absolute;
+  top: 10px;
+  z-index: 5;
+  pointer-events: none;
+  background: rgba(8, 10, 20, 0.72);
+  border: 2px solid transparent;
+  border-radius: 12px;
+  padding: 8px 12px;
+  min-width: 190px;
+  max-width: 250px;
+  /* NOTE: no backdrop-filter here — over a 60fps canvas it causes
+     compositor flicker on weak iGPUs. The translucent bg is enough. */
+}
+.stat-left { left: 10px; border-color: var(--cyan); box-shadow: 0 0 18px rgba(0, 229, 255, 0.3); }
+.stat-right { right: 10px; border-color: var(--pink); box-shadow: 0 0 18px rgba(255, 45, 120, 0.3); }
+.stat-top { display: flex; justify-content: space-between; align-items: baseline; }
+.stat-name { font-weight: 800; font-size: 18px; letter-spacing: 2px; }
+.stat-left .stat-name { color: var(--cyan); }
+.stat-right .stat-name { color: var(--pink); }
+.stat-score { font-size: 30px; font-weight: 900; line-height: 1; }
+.stat-sim { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+.stat-status { margin-top: 4px; font-size: 11px; opacity: 0.85; min-height: 15px; }
 
 .player-panel {
   background: var(--panel);
@@ -98,7 +123,7 @@ html, body, #root {
 .sim-fill { height: 100%; background: linear-gradient(90deg, #7dffcb, var(--green)); transition: width .12s linear; }
 .sim-pct { font-weight: 800; min-width: 52px; text-align: right; }
 .hold-bar { height: 6px; border-radius: 4px; background: rgba(255,255,255,.1); margin-top: 6px; overflow: hidden; }
-.hold-fill { height: 100%; background: var(--gold); }
+.hold-fill { height: 100%; background: var(--gold); transition: width .1s linear; }
 .panel-status { margin-top: 6px; font-size: 13px; opacity: 0.85; min-height: 18px; }
 
 .arena-cell {
@@ -109,16 +134,15 @@ html, body, #root {
 }
 .arena-cell .arena-wrap { flex: 1; display: flex; min-width: 0; }
 .arena-cell .arena-canvas { flex: 1; }
+/* Target meme: floating top-center, right below the HUD timer. */
 .target-overlay {
   position: absolute;
-  right: 10px;
-  bottom: 10px;
-  width: 190px;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 6;
   pointer-events: none;
 }
-.target-overlay .target-img { aspect-ratio: 3 / 4; max-height: 24vh; }
-.target-overlay .target-round { font-size: 12px; }
-.target-overlay .target-label { font-size: 11px; }
 .arena-canvas {
   width: 100%;
   height: 100%;
@@ -127,6 +151,28 @@ html, body, #root {
   background: #000;
   box-shadow: 0 0 40px rgba(0, 229, 255, 0.15), 0 0 40px rgba(255, 45, 120, 0.15);
   object-fit: cover;
+}
+/* NO PLAYER dim: default retained layer over each half. Opacity crossfades
+   on the GPU (transition) — no per-frame canvas cost, cannot blink. */
+.dim-layer {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 4;
+  pointer-events: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.35);
+  transition: opacity 0.25s linear;
+}
+.dim-left { left: 0; width: 50%; }
+.dim-right { left: 50%; width: 50%; }
+.dim-text {
+  color: rgba(165, 176, 200, 0.9);
+  font-weight: 700;
+  font-size: clamp(14px, 2vw, 26px);
+  letter-spacing: 2px;
 }
 .arena-divider {
   position: absolute;
@@ -148,9 +194,12 @@ html, body, #root {
 }
 .target-round { font-weight: 800; letter-spacing: 2px; color: var(--gold); margin-bottom: 8px; }
 .target-img {
-  width: 100%;
-  aspect-ratio: 3 / 4;
-  object-fit: cover;
+  /* Original aspect ratio, never cropped: full meme always visible. */
+  width: auto;
+  height: auto;
+  max-width: min(380px, 30vw);
+  max-height: 34vh;
+  object-fit: contain;
   border-radius: 10px;
   background: #111;
 }
