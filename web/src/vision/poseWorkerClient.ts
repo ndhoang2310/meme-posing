@@ -62,10 +62,10 @@ export class PoseWorkerClient {
     // WASM + model are bundled locally so the booth works offline — no CDN
     // dependency at event time. Default is the LITE model (5.7MB, ~3x faster
     // inference than full; plenty accurate for 4 upper-body joint angles).
-    // Override via env (baked in at build time):
-    // - full local model:  VITE_MODEL_URL=/models/pose_landmarker.task
-    // - Cloudflare R2 full: VITE_MODEL_URL=https://pub-xxx.r2.dev/pose_landmarker.task
-    // (the 30MB full .task exceeds Pages' 25MB/file limit -> R2 only for full).
+    // Override via env (baked in at build time), e.g. full model on R2:
+    //   VITE_MODEL_URL=https://pub-xxx.r2.dev/pose_landmarker.task
+    // (the 30MB full .task exceeds Cloudflare's 25MiB/file limit so it is
+    // NOT shipped in dist/; only the lite model is bundled).
     const wasmUrl = opts?.wasmUrl ?? import.meta.env.VITE_WASM_URL ?? "/wasm";
     const modelUrl =
       opts?.modelUrl ?? import.meta.env.VITE_MODEL_URL ?? "/models/pose_landmarker_lite.task";

@@ -120,7 +120,8 @@ full ~30MB qua `VITE_MODEL_URL` thì mới cần §6.1.)
 > `VITE_MODEL_URL` được nhúng **lúc build** — đổi URL model thì phải
 > **Retry deployment** lại. Không set thì mặc định dùng model lite
 > `/models/pose_landmarker_lite.task` same-origin (offline OK).
-> Muốn model full local: build với `VITE_MODEL_URL=/models/pose_landmarker.task`.
+> Model full (~30MB) vượt giới hạn 25MiB/file nên **không ship trong dist** —
+> muốn dùng thì upload lên R2 (§6.1) rồi set `VITE_MODEL_URL` trỏ tới đó.
 
 ### 6.3. Yêu cầu máy client
 

@@ -1,0 +1,8 @@
+# Cloudflare Workers Static Assets config (used by `npx wrangler deploy`).
+# Present so wrangler serves ./dist directly instead of trying to
+# auto-configure the framework (which demands Vite >= 6; we use Vite 5).
+name = "meme-posing"
+compatibility_date = "2025-01-01"
+
+[assets]
+directory = "./dist"
