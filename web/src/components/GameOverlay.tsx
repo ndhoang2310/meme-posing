@@ -14,6 +14,7 @@ interface Props {
   scoreLeft: number;
   scoreRight: number;
   onRetryCamera: () => void;
+  onPlayAgain: () => void;
   children?: ReactNode;
 }
 
@@ -28,6 +29,7 @@ export function GameOverlay({
   scoreLeft,
   scoreRight,
   onRetryCamera,
+  onPlayAgain,
 }: Props) {
   if (appPhase === "fatal") {
     return (
@@ -115,7 +117,9 @@ export function GameOverlay({
           <div className="final-score">
             {scoreLeft} — {scoreRight}
           </div>
-          <p>Trận mới bắt đầu sau 5 giây…</p>
+          <button className="btn" onClick={onPlayAgain} autoFocus>
+            CHƠI LẠI
+          </button>
         </div>
       </div>
     );

@@ -10,7 +10,6 @@ export const GAME_CONFIG = {
   lostTrackingPauseMs: 1500,
   idleStableMs: 2000,
   pauseTimeoutMs: 3000,
-  gameOverHoldMs: 5000,
   /** Skeleton colors by displayed similarity. Scoring still uses 0.8. */
   skeletonWhiteBelow: 0.72,
   skeletonYellowBelow: 0.88,

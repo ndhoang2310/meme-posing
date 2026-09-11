@@ -62,7 +62,7 @@ Thoát kiosk: `Cmd+Q` (macOS) / `Alt+F4` (Windows).
 - [ ] Skeleton cyan (P1) / hồng (P2) bám đúng người, không lệch video.
 - [ ] Bắt chước pose → % tăng, giữ ~0.4s → +1 điểm, đổi pose.
 - [ ] Một người bước ra >1.5s → hiện “VUI LÒNG TRỞ LẠI VỊ TRÍ”.
-- [ ] Hết 9 lượt → màn hình thắng/hòa → 5s sau tự về IDLE.
+- [ ] Hết 9 lượt → màn hình thắng/hòa đứng yên + nút CHƠI LẠI (không tự reset).
 - [ ] `R` reset, `F` fullscreen hoạt động.
 - [ ] Đèn sự kiện thực tế (không quá tối/backlight), khoảng cách 2–3m.
 

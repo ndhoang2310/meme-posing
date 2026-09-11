@@ -308,8 +308,15 @@ export function App() {
     setSnapshot(getEngine().snapshot());
   }, []);
 
-  const handleFullscreen = useCallback(async () => {
-    try {
+  const handlePlayAgain = useCallback(() => {
+    getEngine().playAgain(performance.now());
+    clearEffects();
+    prevScorerRef.current = null;
+    prevWinnerRef.current = null;
+    setSnapshot(getEngine().snapshot());
+  }, []);
+
+  const handleFullscreen = useCallback(async () => {    try {
       if (document.fullscreenElement) {
         await document.exitFullscreen();
       } else {
@@ -416,6 +423,7 @@ export function App() {
           scoreLeft={snapshot.score.left}
           scoreRight={snapshot.score.right}
           onRetryCamera={handleStartCamera}
+          onPlayAgain={handlePlayAgain}
         />
       )}
       {showDebug && (

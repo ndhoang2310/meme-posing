@@ -177,7 +177,7 @@ describe("GameEngine", () => {
     expect(snap.score.left).toBe(0); // match abandoned
   });
 
-  it("ends the match after 9 rounds and auto-resets after 5s", () => {
+  it("ends the match after 9 rounds and stays until playAgain", () => {
     const e = new GameEngine();
     e.setCatalog(catalogOf(10, MATCH_TARGET));
     const clock = { t: 1000 };
@@ -188,10 +188,17 @@ describe("GameEngine", () => {
     const snap = step(e, 9 * 600, "both-match", clock);
     expect(snap.state).toBe("GAME_OVER");
     expect(snap.winner).not.toBeNull();
-    // Drain the 5s game-over hold without detections so IDLE stays put.
-    const back = step(e, 5200, "none", clock);
+    // No auto-reset: the result screen is sticky even after 10s.
+    const stuck = step(e, 10000, "both-match", clock);
+    expect(stuck.state).toBe("GAME_OVER");
+    expect(stuck.score.left).toBeGreaterThan(0);
+    // Replay button returns a clean IDLE.
+    clock.t += 100;
+    e.playAgain(clock.t);
+    const back = e.snapshot();
     expect(back.state).toBe("IDLE");
-    expect(back.score.left).toBe(0);
+    expect(back.score).toEqual({ left: 0, right: 0 });
+    expect(back.currentPose).toBeNull();
   });
 
   it("resetToIdle returns a clean state", () => {

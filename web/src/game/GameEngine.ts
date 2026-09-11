@@ -26,7 +26,6 @@ export class GameEngine {
   private idleStableMs = 0;
   private lostPlayerMs = 0;
   private pauseRemainingMs = GAME_CONFIG.pauseTimeoutMs;
-  private gameOverElapsedMs = 0;
   private lastScorer: "left" | "right" | null = null;
   private lastTickMs: number | null = null;
 
@@ -47,9 +46,19 @@ export class GameEngine {
     this.idleStableMs = 0;
     this.lostPlayerMs = 0;
     this.pauseRemainingMs = GAME_CONFIG.pauseTimeoutMs;
-    this.gameOverElapsedMs = 0;
     this.lastScorer = null;
     this.lastTickMs = null;
+  }
+
+  /**
+   * Leave GAME_OVER for a fresh booth round. Only called from the replay
+   * button — the engine never auto-resets, so the result screen stays put
+   * until the players ask for a new match.
+   */
+  playAgain(nowMs: number): void {
+    this.resetToIdle();
+    // resetToIdle clears lastTickMs; restore so the next dt is sane.
+    this.lastTickMs = nowMs;
   }
 
   /** Called when the tab was hidden / vision restarted — drop stale stability. */
@@ -181,11 +190,8 @@ export class GameEngine {
         break;
       }
       case "GAME_OVER": {
-        this.gameOverElapsedMs += dt;
-        if (this.gameOverElapsedMs >= GAME_CONFIG.gameOverHoldMs) {
-          this.resetToIdle();
-          this.lastTickMs = nowMs;
-        }
+        // Result screen is sticky: it stays until playAgain() is called
+        // from the replay button. Timers are already frozen by finishMatch.
         break;
       }
     }
@@ -240,7 +246,6 @@ export class GameEngine {
 
   private finishMatch(): void {
     this.state = "GAME_OVER";
-    this.gameOverElapsedMs = 0;
     this.holdMs = { left: 0, right: 0 };
   }
 }
