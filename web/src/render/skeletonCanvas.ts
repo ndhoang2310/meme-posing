@@ -46,7 +46,11 @@ export function drawSkeleton(
   ctx.globalAlpha = 0.9;
   ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.roundRect(px(bb.x), py(bb.y), bb.width * panelW, bb.height * canvasH, 6);
+  if (typeof ctx.roundRect === "function") {
+    ctx.roundRect(px(bb.x), py(bb.y), bb.width * panelW, bb.height * canvasH, 6);
+  } else {
+    ctx.rect(px(bb.x), py(bb.y), bb.width * panelW, bb.height * canvasH); // Safari < 16
+  }
   ctx.stroke();
   ctx.restore();
 

@@ -1,20 +1,21 @@
 /**
- * Pose Web Worker: owns two MediaPipe PoseLandmarker detectors (VIDEO mode,
- * numPoses=1) — one per fixed half-frame crop. Accepts one inference at a
- * time; drops new frames while busy so no queue lag builds up.
+ * Pose Web Worker (single side): owns ONE MediaPipe PoseLandmarker detector
+ * (VIDEO mode, numPoses=1) for a fixed half-frame crop. Two instances of this
+ * worker run in parallel — one per side — so a slow/empty half never blocks
+ * the tracked half (previously both detectors ran sequentially in one worker).
+ *
+ * Each instance runs its own sparse schedule (see detectionScheduler) and its
+ * own busy flag; frames for the two sides are fully independent.
  *
  * Main thread protocol:
- *   { type: "init", wasmUrl, modelUrl } -> { type: "ready", model } | { type: "error", message }
- *   { type: "frame", timestampMs, left: ImageBitmap, right: ImageBitmap }
- *     -> { type: "packet", packet: VisionPacket }
+ *   { type: "init", wasmUrl, modelUrl, side }
+ *     -> { type: "ready", model } | { type: "error", message }
+ *   { type: "frame", timestampMs, bitmap }
+ *     -> { type: "packet", packet: { timestampMs, detection } }
  */
 
 import { FilesetResolver, PoseLandmarker } from "@mediapipe/tasks-vision";
-import {
-  SPARSE_PHASE_LEFT,
-  SPARSE_PHASE_RIGHT,
-  shouldRunHalf,
-} from "./detectionScheduler";
+import { shouldRunHalf } from "./detectionScheduler";
 
 type Landmarker = PoseLandmarker;
 
@@ -22,24 +23,21 @@ interface InitMsg {
   type: "init";
   wasmUrl: string;
   modelUrl: string;
+  side: string;
 }
 
 interface FrameMsg {
   type: "frame";
   timestampMs: number;
-  left: ImageBitmap;
-  right: ImageBitmap;
+  bitmap: ImageBitmap;
 }
 
-let leftDetector: Landmarker | null = null;
-let rightDetector: Landmarker | null = null;
+let detector: Landmarker | null = null;
 let busy = false;
 let closed = false;
-// Asymmetric scheduling state (see detectionScheduler): idle halves are
-// checked sparsely so the tracked half gets (nearly) full inference rate.
 let frameSeq = 0;
-let nullRunL = 0;
-let nullRunR = 0;
+let nullRun = 0;
+let side = "?";
 
 function makeDetector(
   modelPath: string,
@@ -85,59 +83,49 @@ function toDetection(result: {
 }
 
 async function handleInit(msg: InitMsg) {
+  side = msg.side;
   try {
     const vision = await FilesetResolver.forVisionTasks(msg.wasmUrl);
-    leftDetector = await makeDetector(msg.modelUrl, vision);
-    rightDetector = await makeDetector(msg.modelUrl, vision);
-    // Warm-up not possible without a frame; report ready (+ model label for debug).
+    detector = await makeDetector(msg.modelUrl, vision);
+    // Warm-up not possible without a frame; report ready (+ model for debug).
     const model = msg.modelUrl.split("/").pop() ?? msg.modelUrl;
     self.postMessage({ type: "ready", model });
   } catch (err) {
     self.postMessage({
       type: "error",
-      message: err instanceof Error ? err.message : String(err),
+      message: `[${side}] ${err instanceof Error ? err.message : String(err)}`,
     });
   }
 }
 
 function handleFrame(msg: FrameMsg) {
-  const { left, right, timestampMs } = msg;
-  if (busy || closed || !leftDetector || !rightDetector) {
-    // Drop the frame but always release the bitmaps — no memory leak.
-    try { left.close(); } catch { /* noop */ }
-    try { right.close(); } catch { /* noop */ }
-    if (!leftDetector || !rightDetector) {
-      // Not initialized yet: tell main thread nothing is available yet.
-    }
+  const { bitmap, timestampMs } = msg;
+  const release = () => {
+    try { bitmap.close(); } catch { /* noop */ }
+  };
+  if (busy || closed || !detector) {
+    // Drop the frame but always release the bitmap — no memory leak.
+    release();
     return;
   }
   busy = true;
   try {
     frameSeq++;
     const ts = Math.max(1, Math.round(timestampMs));
-    // Idle halves run sparsely; skipped halves report null this packet.
-    const runL = shouldRunHalf(nullRunL, frameSeq, SPARSE_PHASE_LEFT);
-    const runR = shouldRunHalf(nullRunR, frameSeq, SPARSE_PHASE_RIGHT);
-    const lDet = runL
-      ? toDetection(leftDetector.detectForVideo(left, ts) as never, timestampMs)
+    // Idle side runs sparsely; skipped packets report null.
+    const run = shouldRunHalf(nullRun, frameSeq, 0);
+    const det = run
+      ? toDetection(detector.detectForVideo(bitmap, ts) as never, timestampMs)
       : null;
-    const rDet = runR
-      ? toDetection(rightDetector.detectForVideo(right, ts) as never, timestampMs)
-      : null;
-    if (runL) nullRunL = lDet ? 0 : nullRunL + 1;
-    if (runR) nullRunR = rDet ? 0 : nullRunR + 1;
-    self.postMessage({
-      type: "packet",
-      packet: { timestampMs, left: lDet, right: rDet },
-    });
+    if (run) nullRun = det ? 0 : nullRun + 1;
+    self.postMessage({ type: "packet", packet: { timestampMs, detection: det } });
   } catch (err) {
     self.postMessage({
       type: "error",
-      message: err instanceof Error ? err.message : String(err),
+      message: `[${side}] ${err instanceof Error ? err.message : String(err)}`,
     });
   } finally {
-    try { left.close(); } catch { /* noop */ }
-    try { right.close(); } catch { /* noop */ }
+    release();
     busy = false;
   }
 }
@@ -151,10 +139,8 @@ self.onmessage = (ev: MessageEvent<InitMsg | FrameMsg | { type: "close" }>) => {
     handleFrame(msg as FrameMsg);
   } else if (msg.type === "close") {
     closed = true;
-    try { leftDetector?.close(); } catch { /* noop */ }
-    try { rightDetector?.close(); } catch { /* noop */ }
-    leftDetector = null;
-    rightDetector = null;
+    try { detector?.close(); } catch { /* noop */ }
+    detector = null;
   }
 };
 
