@@ -22,6 +22,18 @@ function missLandmarks(): Landmark[] {
   return Array.from({ length: 33 }, () => lm(0.5, 0.5));
 }
 
+/**
+ * Borderline landmarks: both wrists shifted so each elbow errs ~29deg.
+ * sim ~= (2*(1-29/60) + 2*1)/4 ~= 0.76 — inside the hysteresis band
+ * (0.72 .. 0.80), below the fresh threshold.
+ */
+function wobbleLandmarks(): Landmark[] {
+  const arr = matchLandmarks();
+  arr[15] = lm(0.51, 0.7);
+  arr[16] = lm(0.49, 0.7);
+  return arr;
+}
+
 function detection(lms: Landmark[]) {
   return {
     landmarks: lms,
@@ -31,12 +43,14 @@ function detection(lms: Landmark[]) {
   };
 }
 
-function packet(kind: "both-match" | "both-miss" | "left-only" | "left-miss-only" | "none"): VisionPacket {
+function packet(kind: "both-match" | "both-miss" | "both-wobble" | "left-only" | "left-miss-only" | "none"): VisionPacket {
   const m = detection(matchLandmarks());
   const miss = detection(missLandmarks());
+  const wobble = detection(wobbleLandmarks());
   switch (kind) {
     case "both-match": return { timestampMs: 0, left: m, right: m };
     case "both-miss": return { timestampMs: 0, left: miss, right: miss };
+    case "both-wobble": return { timestampMs: 0, left: wobble, right: wobble };
     case "left-only": return { timestampMs: 0, left: m, right: null };
     case "left-miss-only": return { timestampMs: 0, left: miss, right: null };
     case "none": return { timestampMs: 0, left: null, right: null };
@@ -54,7 +68,7 @@ function catalogOf(n: number, target: [number, number, number, number]): PoseDef
 const MATCH_TARGET = jointAngles(matchLandmarks())!;
 
 /** Step the engine in 100ms increments for totalMs. Returns last snapshot. */
-function step(engine: GameEngine, totalMs: number, kind: "both-match" | "both-miss" | "left-only" | "left-miss-only" | "none", startAt: { t: number }) {
+function step(engine: GameEngine, totalMs: number, kind: "both-match" | "both-miss" | "both-wobble" | "left-only" | "left-miss-only" | "none", startAt: { t: number }) {
   let snap = engine.snapshot();
   const steps = Math.ceil(totalMs / 100);
   for (let i = 0; i < steps; i++) {
@@ -102,7 +116,7 @@ describe("GameEngine", () => {
     expect(snap.currentPose).not.toBeNull();
   });
 
-  it("scores once per pose after a 400ms hold", () => {
+  it("scores once per pose after a 300ms hold", () => {
     const e = new GameEngine();
     e.setCatalog(catalogOf(10, MATCH_TARGET));
     const clock = { t: 1000 };
@@ -117,6 +131,41 @@ describe("GameEngine", () => {
     expect(snap.roundNumber).toBe(2);
   });
 
+  it("lenient threshold scores a sustained borderline pose", () => {
+    const e = new GameEngine();
+    e.setCatalog(catalogOf(10, MATCH_TARGET));
+    const clock = { t: 1000 };
+    e.update(packet("both-match"), clock.t);
+    step(e, 2000, "both-match", clock);
+    step(e, 3000, "both-match", clock);
+    step(e, 100, "both-match", clock); // hold 100 at sim 1.0
+    // Sustained ~0.76 sim clears the 0.7 fresh threshold the whole way,
+    // so the hold completes and scores (plus tracks the similarity band).
+    const snap = step(e, 500, "both-wobble", clock);
+    expect(snap.score.left).toBeGreaterThanOrEqual(1);
+    expect(snap.roundNumber).toBeGreaterThanOrEqual(2);
+    expect(snap.similarity.left).toBeGreaterThan(0.7);
+    expect(snap.similarity.left).toBeLessThan(0.8);
+  });
+
+  it("angle smoothing steadies rapid match/wobble oscillation", () => {
+    const e = new GameEngine();
+    e.setCatalog(catalogOf(10, MATCH_TARGET));
+    const clock = { t: 1000 };
+    e.update(packet("both-match"), clock.t);
+    step(e, 2000, "both-match", clock);
+    step(e, 3000, "both-match", clock);
+    // Alternate perfect/noisy frames: raw sim would hit 0.76 every other
+    // tick, but the EMA keeps the reported sim above the threshold.
+    let min = 1;
+    for (let i = 0; i < 20; i++) {
+      clock.t += 100;
+      const s = e.update(packet(i % 2 ? "both-wobble" : "both-match"), clock.t);
+      min = Math.min(min, s.similarity.left);
+    }
+    expect(min).toBeGreaterThan(0.8);
+  });
+
   it("resets the hold timer when similarity drops", () => {
     const e = new GameEngine();
     e.setCatalog(catalogOf(10, MATCH_TARGET));
@@ -124,9 +173,9 @@ describe("GameEngine", () => {
     e.update(packet("both-match"), clock.t);
     step(e, 2000, "both-match", clock);
     step(e, 3000, "both-match", clock);
-    step(e, 300, "both-match", clock); // partial hold 300ms
+    step(e, 200, "both-match", clock); // partial hold 200ms (no score yet)
     expect(e.snapshot().holdMs.left).toBeGreaterThan(0);
-    step(e, 200, "both-miss", clock); // drop below threshold
+    step(e, 200, "both-miss", clock); // deep drop below hysteresis
     expect(e.snapshot().holdMs.left).toBe(0);
     expect(e.snapshot().score.left).toBe(0);
   });
@@ -184,7 +233,8 @@ describe("GameEngine", () => {
     e.update(packet("both-match"), clock.t);
     step(e, 2000, "both-match", clock);
     step(e, 3000, "both-match", clock);
-    // Each 500ms of both-match scores exactly one round.
+    // 300ms holds: each 600ms window scores up to two rounds; 9 windows
+    // finish the match either way.
     const snap = step(e, 9 * 600, "both-match", clock);
     expect(snap.state).toBe("GAME_OVER");
     expect(snap.winner).not.toBeNull();

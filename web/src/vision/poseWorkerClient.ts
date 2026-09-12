@@ -62,6 +62,10 @@ export class PoseWorkerClient {
   /** Model filename reported by the workers at init (for debug display). */
   modelLabel = "?";
 
+  /** Cumulative per-side packet counters (debug: proves both workers produce). */
+  packetsL = 0;
+  packetsR = 0;
+
   onPacket(handler: (p: VisionPacket) => void): void {
     this.packetHandler = handler;
   }
@@ -94,8 +98,9 @@ export class PoseWorkerClient {
     const wasmUrl = opts?.wasmUrl ?? import.meta.env.VITE_WASM_URL ?? "/wasm";
     const modelUrl =
       opts?.modelUrl ?? import.meta.env.VITE_MODEL_URL ?? "/models/pose_landmarker_lite.task";
-    this.left = new PoseWorker();
-    this.right = new PoseWorker();
+    // Named so DevTools -> Sources -> Threads shows two distinct workers.
+    this.left = new PoseWorker({ name: "pose-left" });
+    this.right = new PoseWorker({ name: "pose-right" });
     // Both inits run in parallel; wall time ~= slowest single init.
     await Promise.all([
       this.initSide(this.left, "left", wasmUrl, modelUrl),
@@ -143,6 +148,7 @@ export class PoseWorkerClient {
     const msg = ev.data;
     if (msg?.type === "packet") {
       this.busyL = false;
+      this.packetsL += 1;
       this.detL = msg.packet.detection;
       this.tsL = msg.packet.timestampMs;
       this.emit();
@@ -156,6 +162,7 @@ export class PoseWorkerClient {
     const msg = ev.data;
     if (msg?.type === "packet") {
       this.busyR = false;
+      this.packetsR += 1;
       this.detR = msg.packet.detection;
       this.tsR = msg.packet.timestampMs;
       this.emit();
@@ -213,6 +220,8 @@ export class PoseWorkerClient {
     this.busyR = false;
     this.detL = null;
     this.detR = null;
+    this.packetsL = 0;
+    this.packetsR = 0;
     this.status = "idle";
   }
 }

@@ -28,6 +28,11 @@ export class GameEngine {
   private pauseRemainingMs = GAME_CONFIG.pauseTimeoutMs;
   private lastScorer: "left" | "right" | null = null;
   private lastTickMs: number | null = null;
+  /** EMA-smoothed scoring angles per side (absorbs lite-model jitter). */
+  private smoothAngles: {
+    left: [number, number, number, number] | null;
+    right: [number, number, number, number] | null;
+  } = { left: null, right: null };
 
   setCatalog(catalog: PoseDefinition[]): void {
     this.catalog = catalog;
@@ -48,6 +53,7 @@ export class GameEngine {
     this.pauseRemainingMs = GAME_CONFIG.pauseTimeoutMs;
     this.lastScorer = null;
     this.lastTickMs = null;
+    this.smoothAngles = { left: null, right: null };
   }
 
   /**
@@ -66,6 +72,7 @@ export class GameEngine {
     this.idleStableMs = 0;
     this.lostPlayerMs = 0;
     this.holdMs = { left: 0, right: 0 };
+    this.smoothAngles = { left: null, right: null };
   }
 
   get currentPose(): PoseDefinition | null {
@@ -87,8 +94,8 @@ export class GameEngine {
     this.lastTickMs = nowMs;
 
     const target = this.currentPose?.targetVector ?? null;
-    const leftSim = similarityOf(packet?.left?.landmarks ?? null, target);
-    const rightSim = similarityOf(packet?.right?.landmarks ?? null, target);
+    const leftSim = similarityOf(this.trackedAngles("left", packet?.left?.landmarks ?? null), target);
+    const rightSim = similarityOf(this.trackedAngles("right", packet?.right?.landmarks ?? null), target);
     this.similarity = { left: leftSim, right: rightSim };
 
     const leftDetected = packet?.left != null;
@@ -119,13 +126,17 @@ export class GameEngine {
         this.gameRemainingMs -= dt;
         this.poseRemainingMs -= dt;
 
-        // Per-player hold timers.
-        if (leftDetected && leftSim >= GAME_CONFIG.similarityThreshold) {
+        // Per-player hold timers with hysteresis: a hold starts at the full
+        // threshold but survives dips down to (threshold - hysteresis).
+        const thresh = GAME_CONFIG.similarityThreshold;
+        const lThresh = this.holdMs.left > 0 ? thresh - GAME_CONFIG.similarityHysteresis : thresh;
+        const rThresh = this.holdMs.right > 0 ? thresh - GAME_CONFIG.similarityHysteresis : thresh;
+        if (leftDetected && leftSim >= lThresh) {
           this.holdMs.left += dt;
         } else {
           this.holdMs.left = 0;
         }
-        if (rightDetected && rightSim >= GAME_CONFIG.similarityThreshold) {
+        if (rightDetected && rightSim >= rThresh) {
           this.holdMs.right += dt;
         } else {
           this.holdMs.right = 0;
@@ -220,6 +231,30 @@ export class GameEngine {
     };
   }
 
+  /** EMA over the 4 scoring angles; resets to null when tracking is lost. */
+  private trackedAngles(
+    side: "left" | "right",
+    landmarks: { x: number; y: number; z: number; visibility?: number }[] | null,
+  ): [number, number, number, number] | null {
+    const raw = jointAngles(landmarks);
+    if (!raw) {
+      this.smoothAngles[side] = null;
+      return null;
+    }
+    const prev = this.smoothAngles[side];
+    const a = GAME_CONFIG.angleSmoothing;
+    const next: [number, number, number, number] = prev
+      ? [
+          prev[0] + a * (raw[0] - prev[0]),
+          prev[1] + a * (raw[1] - prev[1]),
+          prev[2] + a * (raw[2] - prev[2]),
+          prev[3] + a * (raw[3] - prev[3]),
+        ]
+      : raw;
+    this.smoothAngles[side] = next;
+    return next;
+  }
+
   private startMatch(): void {
     this.roundOrder = buildRoundOrder(this.catalog.length, GAME_CONFIG.totalRounds);
     this.roundIndex = 0;
@@ -251,11 +286,9 @@ export class GameEngine {
 }
 
 function similarityOf(
-  landmarks: { x: number; y: number; z: number; visibility?: number }[] | null,
+  angles: [number, number, number, number] | null,
   target: [number, number, number, number] | null,
 ): number {
-  if (!landmarks || !target) return 0;
-  const angles = jointAngles(landmarks);
-  if (!angles) return 0;
+  if (!angles || !target) return 0;
   return poseMatchSimilarity(angles, target);
 }

@@ -74,7 +74,8 @@ export function App() {
   // Vision telemetry (?debug=1 overlay): arrival liveness + packet counters.
   const packetAtRef = useRef(0);
   const teleRef = useRef({ count: 0, windowStart: 0, fps: 0, rttMs: 0, nullL: 0, nullR: 0 });
-  const [debugSnap, setDebugSnap] = useState({ fps: 0, rttMs: 0, nullL: 0, nullR: 0, model: "?" });
+  const [debugSnap, setDebugSnap] = useState({ fps: 0, fpsL: 0, fpsR: 0, rttMs: 0, nullL: 0, nullR: 0, model: "?" });
+  const debugPrevRef = useRef({ t: 0, pl: 0, pr: 0 });
   // Dim-layer opacity per half (DOM overlay, GPU-faded). 1 = fully dimmed.
   const [dimLevel, setDimLevel] = useState({ l: 1, r: 1 });
   const debugSentRef = useRef(0);
@@ -211,7 +212,13 @@ export function App() {
       }
       if (showDebug && now - debugSentRef.current >= 500) {
         debugSentRef.current = now;
-        setDebugSnap({ fps: t.fps, rttMs: t.rttMs, nullL: t.nullL, nullR: t.nullR, model: worker.modelLabel });
+        // Per-side packet rates prove both workers produce independently.
+        const dp = debugPrevRef.current;
+        const spanS = dp.t > 0 ? Math.max(0.1, (now - dp.t) / 1000) : 0.5;
+        const fpsL = (worker.packetsL - dp.pl) / spanS;
+        const fpsR = (worker.packetsR - dp.pr) / spanS;
+        debugPrevRef.current = { t: now, pl: worker.packetsL, pr: worker.packetsR };
+        setDebugSnap({ fps: t.fps, fpsL, fpsR, rttMs: t.rttMs, nullL: t.nullL, nullR: t.nullR, model: worker.modelLabel });
       }
       const snap = engine.update(packet, now);
       const ctx = canvas.getContext("2d");
@@ -441,7 +448,7 @@ export function App() {
             pointerEvents: "none",
           }}
         >
-          det {debugSnap.fps.toFixed(1)}/s · rtt {Math.round(debugSnap.rttMs)}ms · nullL
+          det {debugSnap.fps.toFixed(1)}/s (L{debugSnap.fpsL.toFixed(1)} R{debugSnap.fpsR.toFixed(1)}) · rtt {Math.round(debugSnap.rttMs)}ms · nullL
           x{debugSnap.nullL} · nullR x{debugSnap.nullR} · {debugSnap.model}
         </div>
       )}

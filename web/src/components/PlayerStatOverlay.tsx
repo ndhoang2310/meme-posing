@@ -1,3 +1,4 @@
+import { GAME_CONFIG } from "../app/game-config";
 import type { GameSide } from "../app/types";
 
 interface Props {
@@ -34,7 +35,11 @@ export function PlayerStatOverlay({ side, score, similarity, detected, holdProgr
         </div>
       )}
       <div className="stat-status">
-        {detected ? (pct >= 80 ? "KHỚP POSE — GIỮ NGUYÊN!" : "Bắt chước pose") : "Đang tìm người chơi…"}
+        {detected
+          ? (similarity >= GAME_CONFIG.similarityThreshold
+              ? "KHỚP POSE — GIỮ NGUYÊN!"
+              : "Bắt chước pose")
+          : "Đang tìm người chơi…"}
       </div>
     </div>
   );
